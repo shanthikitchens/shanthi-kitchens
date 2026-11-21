@@ -271,10 +271,10 @@
     function isAdminModeEnabled() {
       try {
         const params = new URLSearchParams(window.location.search || '');
-        return params.get('admin') === 'true';
-      } catch (e) {
-        return false;
-      }
+        if (params.get('admin') === 'true') return true;
+        if (window.location.hash && window.location.hash.includes('admin=true')) return true;
+      } catch (e) {}
+      return false;
     }
 
     function loadJSON(key, fallback) {
@@ -338,6 +338,7 @@
         category: 'Signature Cuisine',
         caption: '',
       },
+      photoUploading: false,
       // Reservation Form
       reservation: {
         guestName: '',
@@ -369,60 +370,79 @@
         localStorage.setItem(STORAGE_KEYS.menu, JSON.stringify(state.menuItems));
         localStorage.setItem(STORAGE_KEYS.gallery, JSON.stringify(state.galleryImages));
       } catch (e) {
-        // Ignore storage errors
+        showToast('Browser storage full — connect Supabase Cloud to save more photos.');
       }
     }
 
-    // =========================================================================
-    // 3. SUPABASE REST SYNC ENGINE
-    // =========================================================================
+    function esc(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function waLink(message) {
+      const digits = String(state.settings.whatsappNumber || '').replace(/\D/g, '') || '910000000000';
+      return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+    }
+
+    function filteredMenu() {
+      const q = (state.searchQuery || '').trim().toLowerCase();
+      return state.menuItems.filter((item) => {
+        const matchCategory = state.activeCategory === 'All' || item.category === state.activeCategory;
+        const matchDietary = state.dietaryFilter === 'All' || item.dietary === state.dietaryFilter;
+        const matchQuery =
+          !q ||
+          (item.name || '').toLowerCase().includes(q) ||
+          (item.malayalamName || '').toLowerCase().includes(q) ||
+          (item.description || '').toLowerCase().includes(q) ||
+          (item.category || '').toLowerCase().includes(q);
+        return matchCategory && matchDietary && matchQuery;
+      });
+    }
+
     function hasSupabaseConfig() {
       const url = (state.settings.supabaseUrl || '').trim();
       const key = (state.settings.supabaseAnonKey || '').trim();
-      return url.startsWith('https://') && key.length > 10;
+      return Boolean(url && key && url.startsWith('https://'));
     }
 
-    async function sbRequest(path, options = {}) {
-      const baseUrl = state.settings.supabaseUrl.trim().replace(/\/+$/, '');
-      const key = state.settings.supabaseAnonKey.trim();
-      const res = await fetch(`${baseUrl}/rest/v1/${path}`, {
-        ...options,
-        headers: {
-          apikey: key,
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-          ...(options.headers || {}),
-        },
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `HTTP ${res.status}`);
-      }
-      if (res.status === 204) return null;
-      const contentType = res.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) return null;
-      return res.json();
+    function supabaseHeaders(prefer) {
+      const key = (state.settings.supabaseAnonKey || '').trim();
+      const h = {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      };
+      if (prefer) h.Prefer = prefer;
+      return h;
+    }
+
+    function supabaseTableUrl(table) {
+      return `${state.settings.supabaseUrl.trim().replace(/\/+$/, '')}/rest/v1/${encodeURIComponent(table)}`;
     }
 
     async function syncSettingsCloud() {
       if (!hasSupabaseConfig()) return;
       state.cloudStatus = 'syncing';
       state.cloudError = '';
-      render();
       try {
-        await sbRequest('restaurant_settings?on_conflict=id', {
+        const res = await fetch(`${supabaseTableUrl('restaurant_settings')}?on_conflict=id`, {
           method: 'POST',
-          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          headers: supabaseHeaders('resolution=merge-duplicates,return=minimal'),
           body: JSON.stringify({
             id: 'shanthi-kitchens-main',
             data: state.settings,
             updated_at: new Date().toISOString(),
           }),
         });
+        if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
         state.cloudStatus = 'synced';
       } catch (err) {
         state.cloudStatus = 'error';
-        state.cloudError = err.message || 'Failed to sync settings';
+        state.cloudError = err && err.message ? err.message : 'Supabase sync failed';
       }
       render();
     }
@@ -431,7 +451,6 @@
       if (!hasSupabaseConfig()) return;
       state.cloudStatus = 'syncing';
       state.cloudError = '';
-      render();
       try {
         const rows = state.menuItems.map((item, idx) => ({
           id: item.id,
@@ -439,15 +458,16 @@
           data: item,
           updated_at: new Date().toISOString(),
         }));
-        await sbRequest('menu_items?on_conflict=id', {
+        const res = await fetch(`${supabaseTableUrl('menu_items')}?on_conflict=id`, {
           method: 'POST',
-          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          headers: supabaseHeaders('resolution=merge-duplicates,return=minimal'),
           body: JSON.stringify(rows),
         });
+        if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
         state.cloudStatus = 'synced';
       } catch (err) {
         state.cloudStatus = 'error';
-        state.cloudError = err.message || 'Failed to sync menu';
+        state.cloudError = err && err.message ? err.message : 'Menu sync failed';
       }
       render();
     }
@@ -455,23 +475,17 @@
     async function deleteMenuCloud(id) {
       if (!hasSupabaseConfig()) return;
       try {
-        await sbRequest(`menu_items?id=eq.${encodeURIComponent(id)}`, {
+        await fetch(`${supabaseTableUrl('menu_items')}?id=eq.${encodeURIComponent(id)}`, {
           method: 'DELETE',
-          headers: { Prefer: 'return=minimal' },
+          headers: supabaseHeaders('return=minimal'),
         });
-        state.cloudStatus = 'synced';
-      } catch (err) {
-        state.cloudStatus = 'error';
-        state.cloudError = err.message || 'Failed to delete menu item';
-      }
-      render();
+      } catch (e) {}
     }
 
     async function syncGalleryCloud() {
       if (!hasSupabaseConfig()) return;
       state.cloudStatus = 'syncing';
       state.cloudError = '';
-      render();
       try {
         const rows = state.galleryImages.map((img, idx) => ({
           id: img.id,
@@ -479,15 +493,16 @@
           data: img,
           updated_at: new Date().toISOString(),
         }));
-        await sbRequest('gallery_images?on_conflict=id', {
+        const res = await fetch(`${supabaseTableUrl('gallery_images')}?on_conflict=id`, {
           method: 'POST',
-          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          headers: supabaseHeaders('resolution=merge-duplicates,return=minimal'),
           body: JSON.stringify(rows),
         });
+        if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
         state.cloudStatus = 'synced';
       } catch (err) {
         state.cloudStatus = 'error';
-        state.cloudError = err.message || 'Failed to sync gallery';
+        state.cloudError = err && err.message ? err.message : 'Gallery sync failed';
       }
       render();
     }
@@ -495,104 +510,95 @@
     async function deleteGalleryCloud(id) {
       if (!hasSupabaseConfig()) return;
       try {
-        await sbRequest(`gallery_images?id=eq.${encodeURIComponent(id)}`, {
+        await fetch(`${supabaseTableUrl('gallery_images')}?id=eq.${encodeURIComponent(id)}`, {
           method: 'DELETE',
-          headers: { Prefer: 'return=minimal' },
+          headers: supabaseHeaders('return=minimal'),
         });
-        state.cloudStatus = 'synced';
-      } catch (err) {
-        state.cloudStatus = 'error';
-        state.cloudError = err.message || 'Failed to delete photo';
-      }
-      render();
-    }
-
-    async function pullFromSupabase(notify = false) {
-      if (!hasSupabaseConfig()) {
-        state.cloudStatus = 'local';
-        if (notify) showToast('Enter your Supabase Project URL first.');
-        render();
-        return;
-      }
-      state.cloudStatus = 'syncing';
-      state.cloudError = '';
-      render();
-      try {
-        const [settingsRows, menuRows, galleryRows] = await Promise.all([
-          sbRequest('restaurant_settings?select=data&id=eq.shanthi-kitchens-main&limit=1'),
-          sbRequest('menu_items?select=data&order=sort_order.asc'),
-          sbRequest('gallery_images?select=data&order=sort_order.asc'),
-        ]);
-
-        if (Array.isArray(settingsRows) && settingsRows[0] && settingsRows[0].data) {
-          const remote = settingsRows[0].data;
-          state.settings = {
-            ...state.settings,
-            ...remote,
-            supabaseUrl: remote.supabaseUrl || state.settings.supabaseUrl,
-            supabaseAnonKey: remote.supabaseAnonKey || state.settings.supabaseAnonKey,
-          };
-        }
-        if (Array.isArray(menuRows) && menuRows.length > 0) {
-          state.menuItems = menuRows.map((r) => r.data).filter(Boolean);
-        }
-        if (Array.isArray(galleryRows) && galleryRows.length > 0) {
-          state.galleryImages = galleryRows.map((r) => r.data).filter(Boolean);
-        }
-
-        saveLocalState();
-        state.cloudStatus = 'synced';
-        if (notify) showToast('Synced latest data from Supabase.');
-      } catch (err) {
-        state.cloudStatus = 'error';
-        state.cloudError = err.message || 'Could not read from Supabase';
-        if (notify) showToast(`Supabase error: ${state.cloudError}`);
-      }
-      render();
+      } catch (e) {}
     }
 
     async function pushAllToSupabase() {
       if (!hasSupabaseConfig()) {
-        showToast('Please paste your Supabase Project URL first.');
+        showToast('Enter your Supabase Project URL first.');
         return;
       }
       await syncSettingsCloud();
       await syncMenuCloud();
       await syncGalleryCloud();
-      if (state.cloudStatus !== 'error') {
-        showToast('All settings, menu items & gallery photos pushed to Supabase.');
+      if (state.cloudStatus === 'synced') {
+        showToast('All data pushed to Supabase!');
       }
     }
 
-    // =========================================================================
-    // 4. ESCAPE HELPERS & TEMPLATE RENDERING
-    // =========================================================================
-    function esc(str) {
-      return String(str ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+    async function pullFromSupabase(notify) {
+      if (!hasSupabaseConfig()) return;
+      state.cloudStatus = 'syncing';
+      state.cloudError = '';
+      try {
+        const [sRes, mRes, gRes] = await Promise.all([
+          fetch(`${supabaseTableUrl('restaurant_settings')}?select=data&id=eq.shanthi-kitchens-main&limit=1`, {
+            headers: supabaseHeaders(),
+          }),
+          fetch(`${supabaseTableUrl('menu_items')}?select=data&order=sort_order.asc`, {
+            headers: supabaseHeaders(),
+          }),
+          fetch(`${supabaseTableUrl('gallery_images')}?select=data&order=sort_order.asc`, {
+            headers: supabaseHeaders(),
+          }),
+        ]);
+        if (!sRes.ok || !mRes.ok || !gRes.ok) throw new Error('Could not read from Supabase tables.');
+        const sRows = await sRes.json();
+        const mRows = await mRes.json();
+        const gRows = await gRes.json();
+        if (Array.isArray(sRows) && sRows[0] && sRows[0].data) {
+          state.settings = {
+            ...state.settings,
+            ...sRows[0].data,
+            supabaseUrl: sRows[0].data.supabaseUrl || state.settings.supabaseUrl,
+            supabaseAnonKey: sRows[0].data.supabaseAnonKey || state.settings.supabaseAnonKey,
+          };
+        }
+        if (Array.isArray(mRows) && mRows.length > 0) {
+          state.menuItems = mRows.map((r) => r.data);
+        }
+        if (Array.isArray(gRows) && gRows.length > 0) {
+          state.galleryImages = gRows.map((r) => r.data);
+        }
+        saveLocalState();
+        state.cloudStatus = 'synced';
+        if (notify) showToast('Pulled latest data from Supabase!');
+      } catch (err) {
+        state.cloudStatus = 'error';
+        state.cloudError = err && err.message ? err.message : 'Pull failed';
+        if (notify) showToast(state.cloudError);
+      }
+      render();
     }
 
-    function waLink(text) {
-      const cleanNum = (state.settings.whatsappNumber || '910000000000').replace(/[^\d]/g, '');
-      return `https://wa.me/${cleanNum}?text=${encodeURIComponent(text)}`;
-    }
-
-    function filteredMenu() {
-      const q = state.searchQuery.trim().toLowerCase();
-      return state.menuItems.filter((item) => {
-        const catMatch = state.activeCategory === 'All' || item.category === state.activeCategory;
-        const dietMatch = state.dietaryFilter === 'All' || item.dietary === state.dietaryFilter;
-        const textMatch =
-          !q ||
-          item.name.toLowerCase().includes(q) ||
-          (item.malayalamName && item.malayalamName.toLowerCase().includes(q)) ||
-          item.description.toLowerCase().includes(q) ||
-          item.category.toLowerCase().includes(q);
-        return catMatch && dietMatch && textMatch;
+    // Compress phone/camera image to lightweight JPEG data URL so it saves reliably
+    function compressImageFile(file, maxWidth = 960, quality = 0.78) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Could not read selected image file.'));
+        reader.onload = () => {
+          const img = new Image();
+          img.onerror = () => reject(new Error('Invalid image format.'));
+          img.onload = () => {
+            const scale = img.width > maxWidth ? maxWidth / img.width : 1;
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(img.width * scale);
+            canvas.height = Math.round(img.height * scale);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(String(reader.result));
+              return;
+            }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          };
+          img.src = String(reader.result);
+        };
+        reader.readAsDataURL(file);
       });
     }
 
@@ -1064,6 +1070,7 @@
                       <img
                         src="${esc(img.url)}"
                         alt="${esc(img.title)}"
+                        onerror="this.onerror=null;this.src='https://placehold.co/800x600/0B2218/E5C37C?text=Shanthi+Kitchens';"
                         class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                     </div>
@@ -1317,7 +1324,6 @@
               <p class="font-serif text-2xl sm:text-3xl font-bold text-cream-50">${esc(s.name)}</p>
               <p class="text-xs text-gold-300 mt-1">${esc(s.tagline)}</p>
               <p class="text-xs text-cream-100/60 mt-2">${esc(s.fullAddress)}</p>
-              <p class="text-xs text-cream-100/50 mt-1">Customers see the clean menu; add <span class="text-gold-300">?admin=true</span> at the end of the URL to open Owner Studio.</p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
               ${cloudBadge}
@@ -1861,9 +1867,20 @@
       if (addPhotoForm) {
         addPhotoForm.addEventListener('submit', (e) => {
           e.preventDefault();
-          if (!state.newPhoto.url.trim() || !state.newPhoto.title.trim()) return;
+          const cleanUrl = (state.newPhoto.url || '').trim();
+          const cleanTitle = (state.newPhoto.title || '').trim();
+          if (!cleanUrl) {
+            showToast('ആദ്യം "📷 Choose Photo from Phone / PC" അമർത്തി ഒരു ഫോട്ടോ തിരഞ്ഞെടുക്കുക.');
+            return;
+          }
+          if (!cleanTitle) {
+            showToast('ഫോട്ടോയ്ക്ക് ഒരു പേര് (Title) നൽകുക.');
+            return;
+          }
           const photo = {
             ...state.newPhoto,
+            url: cleanUrl,
+            title: cleanTitle,
             id: `gal-${Date.now()}`,
           };
           state.galleryImages = [photo, ...state.galleryImages];
@@ -1875,8 +1892,31 @@
           };
           saveLocalState();
           syncGalleryCloud();
-          showToast('Gallery photo added.');
+          showToast('Gallery photo added!');
           render();
+        });
+      }
+
+      const photoFileEl = document.querySelector('[data-input="photo-file"]');
+      if (photoFileEl) {
+        photoFileEl.addEventListener('change', async (e) => {
+          const file = e.target.files && e.target.files[0];
+          if (!file) return;
+          state.photoUploading = true;
+          render();
+          try {
+            const compressedDataUrl = await compressImageFile(file);
+            state.newPhoto.url = compressedDataUrl;
+            if (!state.newPhoto.title.trim()) {
+              state.newPhoto.title = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]+/g, ' ');
+            }
+            showToast('ഫോട്ടോ ലോഡ് ആയി! ഇനി "+ Add Photo" ക്ലിക്ക് ചെയ്യുക.');
+          } catch (err) {
+            showToast(err && err.message ? err.message : 'Photo upload failed.');
+          } finally {
+            state.photoUploading = false;
+            render();
+          }
         });
       }
 
@@ -2104,11 +2144,27 @@
                 ? `<div class="space-y-4">
                     <form data-form="add-photo" class="p-4 rounded-2xl bg-forest-950 border border-gold-500/30 space-y-3">
                       <p class="font-serif text-xl text-gold-300">Add Gallery Photo</p>
-                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <input type="url" required data-newphoto="url" value="${esc(state.newPhoto.url)}" placeholder="Image URL (https://...) *" class="px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
-                        <input type="text" required data-newphoto="title" value="${esc(state.newPhoto.title)}" placeholder="Photo Title *" class="px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
+                      <div class="flex flex-wrap items-center gap-3">
+                        <label class="w-full sm:w-auto text-center px-5 py-3 rounded-xl bg-forest-900 border border-gold-500/50 text-gold-300 text-xs font-semibold cursor-pointer hover:bg-forest-800">
+                          ${state.photoUploading ? '⏳ Processing Photo...' : '📷 Choose Photo from Phone / PC'}
+                          <input type="file" accept="image/*" data-input="photo-file" class="hidden" />
+                        </label>
                       </div>
-                      <input type="text" data-newphoto="caption" value="${esc(state.newPhoto.caption)}" placeholder="Caption..." class="w-full px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
+                      ${
+                        state.newPhoto.url
+                          ? `<div class="flex items-center gap-3 p-2.5 rounded-xl bg-forest-900/90 border border-gold-500/30">
+                              <img src="${esc(state.newPhoto.url)}" alt="Preview" onerror="this.onerror=null;this.src='https://placehold.co/200x150/0B2218/E5C37C?text=Photo';" class="w-16 h-16 rounded-lg object-cover shrink-0" />
+                              <div class="text-xs text-cream-100/85">
+                                <p class="font-semibold text-gold-300">Photo Selected ✓</p>
+                                <p class="text-[11px] text-cream-100/65">താഴെ പേര് നൽകി "+ Add Photo" ബട്ടൺ അമർത്തുക.</p>
+                              </div>
+                            </div>`
+                          : ''
+                      }
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <input type="text" required data-newphoto="title" value="${esc(state.newPhoto.title)}" placeholder="Photo Title (e.g., Special Biryani) *" class="px-3 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30" />
+                        <input type="text" data-newphoto="caption" value="${esc(state.newPhoto.caption)}" placeholder="Caption (optional)..." class="px-3 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30" />
+                      </div>
                       <button type="submit" class="px-5 py-2.5 rounded-full gold-btn text-xs font-bold uppercase tracking-wider">+ Add Photo</button>
                     </form>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2116,7 +2172,7 @@
                         .map(
                           (img) => `<div class="p-3 rounded-2xl bg-forest-950 border border-gold-500/25 flex items-center justify-between gap-3">
                             <div class="flex items-center gap-3 min-w-0">
-                              <img src="${esc(img.url)}" alt="${esc(img.title)}" class="w-14 h-14 rounded-xl object-cover shrink-0" />
+                              <img src="${esc(img.url)}" alt="${esc(img.title)}" onerror="this.onerror=null;this.src='https://placehold.co/200x150/0B2218/E5C37C?text=Photo';" class="w-14 h-14 rounded-xl object-cover shrink-0" />
                               <p class="font-semibold text-xs truncate">${esc(img.title)}</p>
                             </div>
                             <button data-action="delete-photo" data-id="${esc(img.id)}" class="px-3 py-1.5 rounded-lg border border-red-400/40 text-red-300 text-xs shrink-0">Remove</button>
