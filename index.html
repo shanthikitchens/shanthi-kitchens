@@ -309,6 +309,10 @@
       toast: null,
       cloudStatus: 'local', // 'local' | 'syncing' | 'synced' | 'error'
       cloudError: '',
+      // QR Code Generator Modal
+      qrModalOpen: false,
+      qrUrlInput: '',
+      qrIncludeAdmin: false,
       // Owner Admin Modal (only available when ?admin=true is present in the URL)
       adminAllowed: isAdminModeEnabled(),
       adminOpen: false,
@@ -592,6 +596,107 @@
       });
     }
 
+    function renderMenuCardsHTML() {
+      const s = state.settings;
+      const isAdmin = state.adminAllowed;
+      const visibleMenu = filteredMenu();
+
+      if (visibleMenu.length === 0) {
+        return `<div class="p-10 rounded-2xl bg-cream-100 border border-gold-500/25 text-center space-y-3">
+            <p class="font-serif text-2xl text-forest-900">No dishes match your current filter</p>
+            <button data-action="reset-filters" class="px-5 py-2.5 rounded-full bg-forest-900 text-cream-50 text-xs font-semibold uppercase tracking-wider">
+              Reset Search &amp; Filters
+            </button>
+          </div>`;
+      }
+
+      return `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          ${visibleMenu
+            .map((item) => {
+              const isEditingThis = state.editingPriceId === item.id;
+              return `
+                <article class="luxury-card rounded-2xl p-6 flex flex-col justify-between">
+                  <div>
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                      <span class="text-[11px] uppercase tracking-[0.16em] text-gold-600 font-semibold">${esc(item.category)}</span>
+                      <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-forest-900/5 text-forest-900 border border-forest-900/15">${esc(item.dietary)}</span>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5 mb-2">
+                      ${
+                        item.isTodaysSpecial
+                          ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-forest-900 text-gold-300">✦ ${esc(item.specialBadge || "Today's Special")}</span>`
+                          : ''
+                      }
+                      ${
+                        item.isSignature
+                          ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-gold-500/20 text-forest-900 border border-gold-500/40">Signature</span>`
+                          : ''
+                      }
+                    </div>
+                    <h3 class="font-serif text-2xl font-semibold text-forest-900">${esc(item.name)}</h3>
+                    ${
+                      item.malayalamName
+                        ? `<p class="text-xs text-forest-800/70 mt-0.5">${esc(item.malayalamName)}</p>`
+                        : ''
+                    }
+                    <p class="text-sm text-forest-800/80 mt-3 leading-relaxed">${esc(item.description)}</p>
+                  </div>
+
+                  <div class="mt-5 pt-4 border-t border-gold-500/20 flex items-center justify-between gap-2">
+                    ${
+                      isEditingThis
+                        ? `<div class="flex items-center gap-1.5 w-full">
+                            <input
+                              type="text"
+                              data-input="temp-price"
+                              value="${esc(state.tempPriceValue)}"
+                              class="w-full px-3 py-1.5 rounded-lg border border-gold-600 bg-white text-sm font-semibold text-forest-900"
+                            />
+                            <button data-action="save-price" data-id="${esc(item.id)}" class="px-3 py-1.5 rounded-lg bg-forest-900 text-gold-300 text-xs font-semibold">Save</button>
+                            <button data-action="cancel-price" class="px-2.5 py-1.5 rounded-lg border border-forest-900/20 text-xs">✕</button>
+                          </div>`
+                        : `<div class="flex items-center gap-2">
+                            <span class="text-base font-bold text-forest-900">${esc(item.price)}</span>
+                            ${
+                              isAdmin && state.priceEditMode
+                                ? `<button data-action="start-price" data-id="${esc(item.id)}" class="px-2.5 py-1 rounded-md bg-gold-500/25 text-forest-900 hover:bg-gold-500 text-xs font-semibold">Edit</button>`
+                                : ''
+                            }
+                          </div>
+                          <a
+                            href="${esc(waLink(`Hello ${s.name}, I would like to enquire about ${item.name} (${item.price}).`))}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-xs font-semibold text-gold-600 hover:text-forest-900"
+                          >
+                            Enquire →
+                          </a>`
+                    }
+                  </div>
+                </article>`;
+            })
+            .join('')}
+        </div>`;
+    }
+
+    function updateMenuCardsOnly() {
+      const container = document.getElementById('menu-cards-container');
+      const clearBtn = document.getElementById('clear-search-btn');
+      if (clearBtn) {
+        if (state.searchQuery.trim().length > 0) {
+          clearBtn.classList.remove('hidden');
+        } else {
+          clearBtn.classList.add('hidden');
+        }
+      }
+      if (container) {
+        container.innerHTML = renderMenuCardsHTML();
+        bindMenuCardActions();
+      } else {
+        render();
+      }
+    }
+
     function render() {
       const s = state.settings;
       const isAdmin = state.adminAllowed;
@@ -862,14 +967,24 @@
 
             <!-- Search & Dietary Filter Bar -->
             <div class="grid grid-cols-1 md:grid-cols-12 gap-4 mb-6">
-              <div class="md:col-span-7">
+              <div class="md:col-span-7 relative">
                 <input
-                  type="text"
+                  type="search"
+                  autocomplete="off"
                   data-input="search-menu"
                   value="${esc(state.searchQuery)}"
                   placeholder="Search dishes by name, Malayalam title, or ingredient (e.g., Duck, Karimeen, Appam)..."
-                  class="w-full px-4 py-3 rounded-xl bg-cream-100 border border-gold-500/35 text-sm text-forest-900 focus:outline-none focus:border-gold-600"
+                  class="w-full pl-4 pr-11 py-3 rounded-xl bg-cream-100 border border-gold-500/35 text-sm text-forest-900 focus:outline-none focus:border-gold-600"
                 />
+                <button
+                  type="button"
+                  id="clear-search-btn"
+                  data-action="clear-search"
+                  aria-label="Clear search"
+                  class="${state.searchQuery.trim() ? '' : 'hidden'} absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg text-forest-800/70 hover:text-forest-900 hover:bg-forest-900/10 text-xs font-bold"
+                >
+                  ✕
+                </button>
               </div>
               <div class="md:col-span-5 flex flex-wrap gap-2">
                 ${['All', 'Veg', 'Non-Veg', 'Seafood']
@@ -910,122 +1025,8 @@
             </div>
 
             <!-- Menu Cards Grid -->
-            ${
-              visibleMenu.length === 0
-                ? `<div class="p-10 rounded-2xl bg-cream-100 border border-gold-500/25 text-center space-y-3">
-                    <p class="font-serif text-2xl text-forest-900">No dishes match your current filter</p>
-                    <button data-action="reset-filters" class="px-5 py-2.5 rounded-full bg-forest-900 text-cream-50 text-xs font-semibold uppercase tracking-wider">
-                      Reset Search &amp; Filters
-                    </button>
-                  </div>`
-                : `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    ${visibleMenu
-                      .map((item) => {
-                        const isEditingThis = state.editingPriceId === item.id;
-                        return `
-                          <article class="luxury-card rounded-2xl p-6 flex flex-col justify-between">
-                            <div>
-                              <div class="flex items-center justify-between gap-2 mb-2">
-                                <span class="text-[11px] uppercase tracking-[0.16em] text-gold-600 font-semibold">${esc(item.category)}</span>
-                                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-forest-900/5 text-forest-900 border border-forest-900/15">${esc(item.dietary)}</span>
-                              </div>
-                              <div class="flex flex-wrap gap-1.5 mb-2">
-                                ${
-                                  item.isTodaysSpecial
-                                    ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-forest-900 text-gold-300">✦ ${esc(item.specialBadge || "Today's Special")}</span>`
-                                    : ''
-                                }
-                                ${
-                                  item.isSignature
-                                    ? `<span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-gold-500/20 text-forest-900 border border-gold-500/40">Signature</span>`
-                                    : ''
-                                }
-                              </div>
-                              <h3 class="font-serif text-2xl font-semibold text-forest-900">${esc(item.name)}</h3>
-                              ${
-                                item.malayalamName
-                                  ? `<p class="text-xs text-forest-800/70 mt-0.5">${esc(item.malayalamName)}</p>`
-                                  : ''
-                              }
-                              <p class="text-sm text-forest-800/80 mt-3 leading-relaxed">${esc(item.description)}</p>
-                            </div>
-
-                            <div class="mt-5 pt-4 border-t border-gold-500/20 flex items-center justify-between gap-2">
-                              ${
-                                isEditingThis
-                                  ? `<div class="flex items-center gap-1.5 w-full">
-                                      <input
-                                        type="text"
-                                        data-input="temp-price"
-                                        value="${esc(state.tempPriceValue)}"
-                                        class="w-full px-3 py-1.5 rounded-lg border border-gold-600 bg-white text-sm font-semibold text-forest-900"
-                                      />
-                                      <button data-action="save-price" data-id="${esc(item.id)}" class="px-3 py-1.5 rounded-lg bg-forest-900 text-gold-300 text-xs font-semibold">Save</button>
-                                      <button data-action="cancel-price" class="px-2.5 py-1.5 rounded-lg border border-forest-900/20 text-xs">✕</button>
-                                    </div>`
-                                  : `<div class="flex items-center gap-2">
-                                      <span class="text-base font-bold text-forest-900">${esc(item.price)}</span>
-                                      ${
-                                        isAdmin && state.priceEditMode
-                                          ? `<button data-action="start-price" data-id="${esc(item.id)}" class="px-2.5 py-1 rounded-md bg-gold-500/25 text-forest-900 hover:bg-gold-500 text-xs font-semibold">Edit</button>`
-                                          : ''
-                                      }
-                                    </div>
-                                    <a
-                                      href="${esc(waLink(`Hello ${s.name}, I would like to enquire about ${item.name} (${item.price}).`))}"
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      class="text-xs font-semibold text-gold-600 hover:text-forest-900"
-                                    >
-                                      Enquire →
-                                    </a>`
-                              }
-                            </div>
-                          </article>`;
-                      })
-                      .join('')}
-                  </div>`
-            }
-          </div>
-        </section>
-
-        <!-- 5. Signature Food Showcase -->
-        <section id="signatures" class="py-16 sm:py-24 bg-forest-900 text-cream-50">
-          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="text-center max-w-2xl mx-auto mb-12">
-              <p class="text-xs uppercase tracking-[0.25em] text-gold-400 mb-2">House Highlights</p>
-              <h2 class="font-serif text-3xl sm:text-5xl font-semibold">Signature Dishes</h2>
-              <p class="text-sm text-cream-100/80 mt-3">
-                Standout dishes that define the character of Shanthi Kitchens in Pathanamthitta.
-              </p>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              ${signatures
-                .map(
-                  (dish, index) => `
-                  <div class="p-6 sm:p-7 rounded-2xl bg-forest-800/80 border border-gold-500/30 flex flex-col justify-between">
-                    <div>
-                      <div class="flex items-center justify-between text-xs text-gold-300 uppercase tracking-widest mb-2">
-                        <span>Signature #0${index + 1}</span>
-                        <span>${esc(dish.category)}</span>
-                      </div>
-                      <h3 class="font-serif text-2xl sm:text-3xl font-semibold text-cream-50">${esc(dish.name)}</h3>
-                      <p class="text-sm text-cream-100/80 mt-2.5 leading-relaxed">${esc(dish.description)}</p>
-                    </div>
-                    <div class="mt-5 pt-4 border-t border-gold-500/20 flex items-center justify-between">
-                      <span class="font-bold text-gold-300">${esc(dish.price)}</span>
-                      <a
-                        href="${esc(waLink(`Hello ${s.name}, I'd like to know more about your signature dish: ${dish.name}.`))}"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="text-xs uppercase tracking-wider text-gold-300 hover:underline"
-                      >
-                        Ask on WhatsApp →
-                      </a>
-                    </div>
-                  </div>`
-                )
-                .join('')}
+            <div id="menu-cards-container">
+              ${renderMenuCardsHTML()}
             </div>
           </div>
         </section>
@@ -1316,16 +1317,23 @@
               <p class="font-serif text-2xl sm:text-3xl font-bold text-cream-50">${esc(s.name)}</p>
               <p class="text-xs text-gold-300 mt-1">${esc(s.tagline)}</p>
               <p class="text-xs text-cream-100/60 mt-2">${esc(s.fullAddress)}</p>
+              <p class="text-xs text-cream-100/50 mt-1">Customers see the clean menu; add <span class="text-gold-300">?admin=true</span> at the end of the URL to open Owner Studio.</p>
             </div>
             <div class="flex flex-wrap items-center gap-3">
               ${cloudBadge}
+              <button
+                data-action="open-qr"
+                class="px-4 py-2 rounded-full border border-gold-500/45 text-cream-50 hover:border-gold-300 hover:text-gold-300 text-xs font-semibold uppercase tracking-wider transition-colors"
+              >
+                QR Code
+              </button>
               ${
                 isAdmin
                   ? `<button
                       data-action="open-admin"
                       class="px-4 py-2 rounded-full border border-gold-500/45 text-gold-300 hover:bg-gold-500 hover:text-forest-900 text-xs font-semibold uppercase tracking-wider transition-colors"
                     >
-                      Owner Studio
+                      Owner Studio (PIN: ${esc(s.adminPin)})
                     </button>`
                   : ''
               }
@@ -1378,6 +1386,9 @@
           </a>
         </div>
 
+        <!-- QR Code Generator Modal -->
+        ${state.qrModalOpen ? renderQrModal() : ''}
+
         <!-- Owner Admin Studio Modal -->
         ${isAdmin && state.adminOpen ? renderAdminModal() : ''}
       `;
@@ -1385,295 +1396,80 @@
       bindEvents();
     }
 
-    function renderAdminModal() {
-      if (!state.adminAllowed) return '';
-      const s = state.settings;
-      if (!state.adminUnlocked) {
-        return `<div class="fixed inset-0 z-[75] bg-forest-950/85 backdrop-blur-sm flex items-center justify-center p-4">
-          <div class="max-w-md w-full rounded-3xl bg-forest-900 text-cream-50 border border-gold-500/45 p-6 sm:p-8 shadow-2xl">
-            <div class="flex items-center justify-between mb-4">
-              <h2 class="font-serif text-3xl font-semibold text-gold-300">Owner Studio</h2>
-              <button data-action="close-admin" class="w-9 h-9 rounded-full border border-gold-500/30 text-cream-100">✕</button>
-            </div>
-            <p class="text-xs sm:text-sm text-cream-100/80 mb-5">
-              Enter your Owner PIN to edit Today's Specials, menu items, prices, delivery details, gallery photos, and Supabase cloud sync. (Default PIN: <strong class="text-gold-300">1234</strong>)
-            </p>
-            <form data-form="unlock-admin" class="space-y-4">
-              <input
-                type="password"
-                data-input="pin"
-                value="${esc(state.pinInput)}"
-                placeholder="Enter PIN (default 1234)"
-                class="w-full px-4 py-3 rounded-xl bg-forest-950 border border-gold-500/40 text-cream-50 text-sm focus:outline-none focus:border-gold-300"
-              />
-              ${state.pinError ? `<p class="text-xs text-red-300">${esc(state.pinError)}</p>` : ''}
-              <button type="submit" class="w-full py-3 rounded-full gold-btn text-xs font-bold uppercase tracking-wider">
-                Unlock Studio
-              </button>
-            </form>
+    function getQrTargetUrl() {
+      const fallbackUrl =
+        typeof window !== 'undefined' && window.location && window.location.href.startsWith('http')
+          ? window.location.href.split('?')[0]
+          : 'https://shanthi-kitchens.vercel.app';
+      const base = (state.qrUrlInput || fallbackUrl).trim().replace(/\/+$/, '');
+      if (!state.qrIncludeAdmin) return base;
+      return base.includes('?') ? `${base}&admin=true` : `${base}/?admin=true`;
+    }
+
+    function renderQrModal() {
+      const targetUrl = getQrTargetUrl();
+      const qrImgSrc = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&data=${encodeURIComponent(targetUrl)}`;
+      return `<div class="fixed inset-0 z-[75] bg-forest-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="max-w-md w-full rounded-3xl bg-forest-900 text-cream-50 border border-gold-500/45 p-6 shadow-2xl space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="font-serif text-2xl sm:text-3xl font-semibold text-gold-300">Website QR Code</h2>
+            <button data-action="close-qr" class="w-9 h-9 rounded-full border border-gold-500/30 text-cream-100">✕</button>
           </div>
-        </div>`;
-      }
-
-      const tabs = [
-        { id: 'specials', label: "Today's Specials" },
-        { id: 'menu', label: 'Menu & Prices' },
-        { id: 'details', label: 'Location & Delivery' },
-        { id: 'gallery', label: 'Gallery Photos' },
-        { id: 'cloud', label: 'Supabase Cloud' },
-      ];
-
-      return `<div class="fixed inset-0 z-[75] bg-forest-950/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
-        <div class="max-w-5xl w-full max-h-[90vh] flex flex-col rounded-3xl bg-forest-900 text-cream-50 border border-gold-500/45 shadow-2xl overflow-hidden">
-          <!-- Studio Header -->
-          <div class="px-6 py-4 bg-forest-950 border-b border-gold-500/25 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 class="font-serif text-2xl sm:text-3xl font-semibold text-gold-300">Shanthi Kitchens — Owner Studio</h2>
-              <p class="text-xs text-cream-100/70">Changes save automatically to your browser and sync to Supabase when configured.</p>
-            </div>
-            <button data-action="close-admin" class="px-4 py-2 rounded-full border border-gold-500/40 text-xs font-semibold uppercase tracking-wider hover:bg-gold-500 hover:text-forest-900 transition-colors">
-              Close ✕
+          <p class="text-xs text-cream-100/80 leading-relaxed">
+            നിങ്ങളുടെ ലൈവ് വെബ്സൈറ്റ് ലിങ്ക് താഴെ കൊടുത്ത് ടേബിൾ കാർഡുകൾക്കും ബിൽ കൗണ്ടറിനും വേണ്ടി QR Code ഡൗൺലോഡ് ചെയ്യാം.
+          </p>
+          <div>
+            <label class="block text-xs text-gold-300 mb-1">Live Website URL</label>
+            <input
+              type="url"
+              data-input="qr-url"
+              value="${esc(state.qrUrlInput)}"
+              placeholder="https://your-site.vercel.app"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/35 text-xs sm:text-sm text-cream-50"
+            />
+          </div>
+          <div class="flex gap-2">
+            <button
+              data-action="qr-mode-customer"
+              class="flex-1 py-2 px-3 rounded-xl text-xs font-semibold border ${
+                !state.qrIncludeAdmin
+                  ? 'bg-gold-500 text-forest-900 border-gold-500'
+                  : 'bg-forest-950 text-cream-100 border-gold-500/30'
+              }"
+            >
+              Customer Menu Link
+            </button>
+            <button
+              data-action="qr-mode-admin"
+              class="flex-1 py-2 px-3 rounded-xl text-xs font-semibold border ${
+                state.qrIncludeAdmin
+                  ? 'bg-gold-500 text-forest-900 border-gold-500'
+                  : 'bg-forest-950 text-cream-100 border-gold-500/30'
+              }"
+            >
+              Owner Admin (?admin=true)
             </button>
           </div>
-
-          <!-- Studio Tabs -->
-          <div class="px-6 py-3 bg-forest-800/70 border-b border-gold-500/20 flex gap-2 overflow-x-auto">
-            ${tabs
-              .map(
-                (t) => `<button
-                  data-action="set-admin-tab"
-                  data-tab="${t.id}"
-                  class="shrink-0 px-4 py-2 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors ${
-                    state.adminTab === t.id
-                      ? 'bg-gold-500 text-forest-900'
-                      : 'bg-forest-950/70 text-cream-100 border border-gold-500/25 hover:border-gold-400'
-                  }"
-                >${t.label}</button>`
-              )
-              .join('')}
+          <div class="bg-white p-4 rounded-2xl flex flex-col items-center justify-center">
+            <img src="${esc(qrImgSrc)}" alt="QR Code for ${esc(targetUrl)}" class="w-52 h-52 object-contain" />
+            <p class="text-[11px] text-forest-900 font-medium mt-2 break-all text-center">${esc(targetUrl)}</p>
           </div>
-
-          <!-- Studio Body -->
-          <div class="p-6 overflow-y-auto space-y-6 flex-1">
-            ${
-              state.adminTab === 'specials'
-                ? `<div class="space-y-5">
-                    <div class="p-4 rounded-2xl bg-forest-950/70 border border-gold-500/30">
-                      <label class="block text-xs font-semibold uppercase tracking-wider text-gold-300 mb-2">Today's Special Banner Note</label>
-                      <input
-                        type="text"
-                        data-setting="todaysSpecialNote"
-                        value="${esc(s.todaysSpecialNote)}"
-                        class="w-full px-4 py-2.5 rounded-xl bg-forest-900 border border-gold-500/35 text-sm text-cream-50"
-                      />
-                    </div>
-                    <div class="space-y-3">
-                      <h3 class="font-serif text-2xl text-gold-300">Toggle Dishes Available Today</h3>
-                      ${state.menuItems
-                        .map(
-                          (item) => `<div class="p-4 rounded-2xl bg-forest-950/60 border border-gold-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                              <p class="font-semibold text-sm text-cream-50">${esc(item.name)} <span class="text-gold-300">(${esc(item.price)})</span></p>
-                              <p class="text-xs text-cream-100/70">${esc(item.category)} · ${esc(item.dietary)}</p>
-                            </div>
-                            <div class="flex items-center gap-2">
-                              <input
-                                type="text"
-                                data-special-badge="${esc(item.id)}"
-                                value="${esc(item.specialBadge || "Today's Special")}"
-                                placeholder="Badge label"
-                                class="px-3 py-1.5 rounded-lg bg-forest-900 border border-gold-500/30 text-xs text-cream-50 w-40"
-                              />
-                              <button
-                                data-action="toggle-special"
-                                data-id="${esc(item.id)}"
-                                class="px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${
-                                  item.isTodaysSpecial
-                                    ? 'bg-gold-500 text-forest-900'
-                                    : 'bg-forest-800 text-cream-100 border border-gold-500/30'
-                                }"
-                              >
-                                ${item.isTodaysSpecial ? 'Active Today ✓' : 'Set Special'}
-                              </button>
-                            </div>
-                          </div>`
-                        )
-                        .join('')}
-                    </div>
-                  </div>`
-                : ''
-            }
-
-            ${
-              state.adminTab === 'menu'
-                ? `<div class="space-y-6">
-                    <form data-form="add-dish" class="p-5 rounded-2xl bg-forest-950/70 border border-gold-500/30 space-y-4">
-                      <h3 class="font-serif text-2xl text-gold-300">Add New Dish</h3>
-                      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                        <input type="text" required data-newdish="name" value="${esc(state.newDish.name)}" placeholder="Dish Name *" class="px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50" />
-                        <input type="text" data-newdish="malayalamName" value="${esc(state.newDish.malayalamName)}" placeholder="Malayalam Name (optional)" class="px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50" />
-                        <input type="text" data-newdish="price" value="${esc(state.newDish.price)}" placeholder="Price (e.g., ₹240)" class="px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50" />
-                      </div>
-                      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                        <select data-newdish="category" class="px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50">
-                          ${CATEGORIES.filter((c) => c !== 'All').map((c) => `<option ${state.newDish.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
-                        </select>
-                        <select data-newdish="dietary" class="px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50">
-                          <option ${state.newDish.dietary === 'Non-Veg' ? 'selected' : ''}>Non-Veg</option>
-                          <option ${state.newDish.dietary === 'Veg' ? 'selected' : ''}>Veg</option>
-                          <option ${state.newDish.dietary === 'Seafood' ? 'selected' : ''}>Seafood</option>
-                        </select>
-                        <label class="flex items-center gap-2 px-3 py-2 text-xs text-cream-100">
-                          <input type="checkbox" data-newdish="isTodaysSpecial" ${state.newDish.isTodaysSpecial ? 'checked' : ''} />
-                          <span>Feature in Today's Specials</span>
-                        </label>
-                      </div>
-                      <textarea rows="2" data-newdish="description" placeholder="Short description of ingredients and flavour..." class="w-full px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50">${esc(state.newDish.description)}</textarea>
-                      <button type="submit" class="px-5 py-2.5 rounded-full gold-btn text-xs font-bold uppercase tracking-wider">+ Add Dish to Menu</button>
-                    </form>
-
-                    <div class="space-y-3">
-                      <h3 class="font-serif text-2xl text-gold-300">Existing Menu Items (${state.menuItems.length})</h3>
-                      ${state.menuItems
-                        .map(
-                          (item) => `<div class="p-4 rounded-2xl bg-forest-950/60 border border-gold-500/25 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-                            <input type="text" data-editmenu-id="${esc(item.id)}" data-editmenu-field="name" value="${esc(item.name)}" class="sm:col-span-4 px-3 py-2 rounded-lg bg-forest-900 border border-gold-500/25 text-xs text-cream-50" />
-                            <input type="text" data-editmenu-id="${esc(item.id)}" data-editmenu-field="price" value="${esc(item.price)}" class="sm:col-span-2 px-3 py-2 rounded-lg bg-forest-900 border border-gold-500/25 text-xs text-gold-300 font-semibold" />
-                            <input type="text" data-editmenu-id="${esc(item.id)}" data-editmenu-field="description" value="${esc(item.description)}" class="sm:col-span-4 px-3 py-2 rounded-lg bg-forest-900 border border-gold-500/25 text-xs text-cream-100" />
-                            <div class="sm:col-span-2 flex justify-end">
-                              <button data-action="delete-dish" data-id="${esc(item.id)}" class="px-3 py-2 rounded-lg bg-red-950/70 border border-red-400/30 text-red-200 text-xs font-semibold hover:bg-red-900">Delete</button>
-                            </div>
-                          </div>`
-                        )
-                        .join('')}
-                    </div>
-                  </div>`
-                : ''
-            }
-
-            ${
-              state.adminTab === 'details'
-                ? `<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <label class="block text-gold-300 mb-1">Restaurant Name</label>
-                      <input type="text" data-setting="name" value="${esc(s.name)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/30 text-sm text-cream-50" />
-                    </div>
-                    <div>
-                      <label class="block text-gold-300 mb-1">Hero Tagline</label>
-                      <input type="text" data-setting="tagline" value="${esc(s.tagline)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/30 text-sm text-cream-50" />
-                    </div>
-                    <div class="sm:col-span-2">
-                      <label class="block text-gold-300 mb-1">Pathanamthitta Address</label>
-                      <input type="text" data-setting="fullAddress" value="${esc(s.fullAddress)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/30 text-sm text-cream-50" />
-                    </div>
-                    <div>
-                      <label class="block text-gold-300 mb-1">Phone Display</label>
-                      <input type="text" data-setting="phoneDisplay" value="${esc(s.phoneDisplay)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/30 text-sm text-cream-50" />
-                    </div>
-                    <div>
-                      <label class="block text-gold-300 mb-1">WhatsApp Number (digits with country code)</label>
-                      <input type="text" data-setting="whatsappNumber" value="${esc(s.whatsappNumber)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/30 text-sm text-cream-50" />
-                    </div>
-                    <div>
-                      <label class="block text-gold-300 mb-1">Opening Hours</label>
-                      <input type="text" data-setting="openingHours" value="${esc(s.openingHours)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/30 text-sm text-cream-50" />
-                    </div>
-                    <div>
-                      <label class="block text-gold-300 mb-1">Owner PIN</label>
-                      <input type="text" data-setting="adminPin" value="${esc(s.adminPin)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/30 text-sm text-cream-50" />
-                    </div>
-                    <div class="sm:col-span-2">
-                      <label class="block text-gold-300 mb-1">Delivery &amp; Takeaway Summary</label>
-                      <input type="text" data-setting="deliverySummary" value="${esc(s.deliverySummary)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/30 text-sm text-cream-50" />
-                    </div>
-                    <div class="sm:col-span-2">
-                      <label class="block text-gold-300 mb-1">Delivery Areas in Pathanamthitta</label>
-                      <input type="text" data-setting="deliveryAreas" value="${esc(s.deliveryAreas)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/30 text-sm text-cream-50" />
-                    </div>
-                    <div class="sm:col-span-2">
-                      <label class="block text-gold-300 mb-1">Minimum Order / Delivery Note</label>
-                      <input type="text" data-setting="deliveryMinOrderNote" value="${esc(s.deliveryMinOrderNote)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/30 text-sm text-cream-50" />
-                    </div>
-                  </div>`
-                : ''
-            }
-
-            ${
-              state.adminTab === 'gallery'
-                ? `<div class="space-y-6">
-                    <form data-form="add-photo" class="p-5 rounded-2xl bg-forest-950/70 border border-gold-500/30 space-y-3 text-xs">
-                      <h3 class="font-serif text-2xl text-gold-300">Add Gallery Photo</h3>
-                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <input type="url" required data-newphoto="url" value="${esc(state.newPhoto.url)}" placeholder="Image URL (https://...) *" class="px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50" />
-                        <input type="text" required data-newphoto="title" value="${esc(state.newPhoto.title)}" placeholder="Photo Title *" class="px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50" />
-                      </div>
-                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <select data-newphoto="category" class="px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50">
-                          <option ${state.newPhoto.category === 'Signature Cuisine' ? 'selected' : ''}>Signature Cuisine</option>
-                          <option ${state.newPhoto.category === 'Ambiance & Dining' ? 'selected' : ''}>Ambiance & Dining</option>
-                          <option ${state.newPhoto.category === 'Spices & Craft' ? 'selected' : ''}>Spices & Craft</option>
-                        </select>
-                        <input type="text" data-newphoto="caption" value="${esc(state.newPhoto.caption)}" placeholder="Short caption" class="px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50" />
-                      </div>
-                      <button type="submit" class="px-5 py-2.5 rounded-full gold-btn text-xs font-bold uppercase tracking-wider">+ Add to Gallery</button>
-                    </form>
-
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      ${state.galleryImages
-                        .map(
-                          (img) => `<div class="p-3 rounded-2xl bg-forest-950/60 border border-gold-500/25 flex items-center gap-3">
-                            <img src="${esc(img.url)}" alt="${esc(img.title)}" class="w-20 h-16 rounded-xl object-cover shrink-0 bg-forest-900" />
-                            <div class="flex-1 min-w-0">
-                              <p class="font-semibold text-sm text-cream-50 truncate">${esc(img.title)}</p>
-                              <p class="text-xs text-gold-300">${esc(img.category)}</p>
-                            </div>
-                            <button data-action="delete-photo" data-id="${esc(img.id)}" class="px-3 py-1.5 rounded-lg bg-red-950/70 border border-red-400/30 text-red-200 text-xs font-semibold">Remove</button>
-                          </div>`
-                        )
-                        .join('')}
-                    </div>
-                  </div>`
-                : ''
-            }
-
-            ${
-              state.adminTab === 'cloud'
-                ? `<div class="space-y-5 text-xs">
-                    <div class="p-5 rounded-2xl bg-forest-950/70 border border-gold-500/35 space-y-4">
-                      <div class="flex flex-wrap items-center justify-between gap-2">
-                        <h3 class="font-serif text-2xl text-gold-300">Supabase Cloud Connection</h3>
-                        ${cloudBadge}
-                      </div>
-                      <div>
-                        <label class="block text-gold-300 mb-1">Supabase Project URL</label>
-                        <input type="url" data-setting="supabaseUrl" value="${esc(s.supabaseUrl)}" placeholder="https://your-project-ref.supabase.co" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50" />
-                      </div>
-                      <div>
-                        <label class="block text-gold-300 mb-1">Supabase Publishable / Anon Key</label>
-                        <input type="text" data-setting="supabaseAnonKey" value="${esc(s.supabaseAnonKey)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-900 border border-gold-500/30 text-sm text-cream-50" />
-                      </div>
-                      ${
-                        state.cloudError
-                          ? `<p class="p-3 rounded-xl bg-red-950/60 border border-red-400/40 text-red-200">${esc(state.cloudError)}</p>`
-                          : ''
-                      }
-                      <div class="flex flex-wrap gap-2.5">
-                        <button data-action="push-supabase" class="px-4 py-2.5 rounded-full gold-btn text-xs font-bold uppercase tracking-wider">Push All Data to Supabase</button>
-                        <button data-action="pull-supabase" class="px-4 py-2.5 rounded-full bg-forest-800 border border-gold-500/40 text-gold-300 text-xs font-semibold uppercase tracking-wider">Pull Latest from Supabase</button>
-                      </div>
-                    </div>
-
-                    <div class="p-5 rounded-2xl bg-forest-950/70 border border-gold-500/30 flex flex-wrap gap-3">
-                      <button data-action="export-json" class="px-4 py-2.5 rounded-full bg-forest-800 border border-gold-500/40 text-cream-50 text-xs font-semibold uppercase tracking-wider">Export JSON Backup</button>
-                      <label class="px-4 py-2.5 rounded-full bg-forest-800 border border-gold-500/40 text-gold-300 text-xs font-semibold uppercase tracking-wider cursor-pointer">
-                        Import JSON Backup
-                        <input type="file" accept=".json" data-input="import-json" class="hidden" />
-                      </label>
-                      <button data-action="reset-defaults" class="px-4 py-2.5 rounded-full border border-red-400/40 text-red-300 text-xs font-semibold uppercase tracking-wider">Reset Defaults</button>
-                    </div>
-                  </div>`
-                : ''
-            }
+          <div class="flex gap-2.5">
+            <a
+              href="${esc(qrImgSrc)}"
+              download="shanthi-kitchens-qr.png"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="flex-1 py-2.5 rounded-full gold-btn text-center text-xs font-bold uppercase tracking-wider"
+            >
+              Download QR Image
+            </a>
+            <button
+              data-action="copy-qr-url"
+              class="px-4 py-2.5 rounded-full border border-gold-500/40 text-gold-300 text-xs font-semibold uppercase tracking-wider"
+            >
+              Copy Link
+            </button>
           </div>
         </div>
       </div>`;
@@ -1682,8 +1478,53 @@
     // =========================================================================
     // 5. EVENT BINDING
     // =========================================================================
+    function bindMenuCardActions() {
+      const container = document.getElementById('menu-cards-container');
+      if (!container) return;
+
+      container.querySelectorAll('[data-action]').forEach((el) => {
+        el.addEventListener('click', () => {
+          const action = el.getAttribute('data-action');
+          const id = el.getAttribute('data-id');
+          if (action === 'reset-filters') {
+            state.activeCategory = 'All';
+            state.dietaryFilter = 'All';
+            state.searchQuery = '';
+            render();
+          } else if (action === 'start-price') {
+            if (!state.adminAllowed) return;
+            const item = state.menuItems.find((m) => m.id === id);
+            if (item) {
+              state.editingPriceId = id;
+              state.tempPriceValue = item.price === '[₹ Price]' ? '₹ ' : item.price;
+              updateMenuCardsOnly();
+            }
+          } else if (action === 'save-price') {
+            const cleaned = (state.tempPriceValue || '').trim() || '[₹ Price]';
+            state.menuItems = state.menuItems.map((m) => (m.id === id ? { ...m, price: cleaned } : m));
+            state.editingPriceId = null;
+            saveLocalState();
+            syncMenuCloud();
+            showToast('Price updated.');
+            updateMenuCardsOnly();
+          } else if (action === 'cancel-price') {
+            state.editingPriceId = null;
+            updateMenuCardsOnly();
+          }
+        });
+      });
+
+      const tempPriceEl = container.querySelector('[data-input="temp-price"]');
+      if (tempPriceEl) {
+        tempPriceEl.addEventListener('input', (e) => {
+          state.tempPriceValue = e.target.value;
+        });
+      }
+    }
+
     function bindEvents() {
       document.querySelectorAll('[data-action]').forEach((el) => {
+        if (el.closest('#menu-cards-container')) return;
         el.addEventListener('click', () => {
           const action = el.getAttribute('data-action');
           const id = el.getAttribute('data-id');
@@ -1694,6 +1535,42 @@
           } else if (action === 'close-mobile-nav') {
             state.mobileMenuOpen = false;
             render();
+          } else if (action === 'open-qr') {
+            if (!state.qrUrlInput && typeof window !== 'undefined' && window.location.href.startsWith('http')) {
+              state.qrUrlInput = window.location.href.split('?')[0];
+            }
+            state.qrModalOpen = true;
+            render();
+          } else if (action === 'close-qr') {
+            state.qrModalOpen = false;
+            render();
+          } else if (action === 'qr-mode-customer') {
+            state.qrIncludeAdmin = false;
+            render();
+          } else if (action === 'qr-mode-admin') {
+            state.qrIncludeAdmin = true;
+            render();
+          } else if (action === 'copy-qr-url') {
+            const target = getQrTargetUrl();
+            const tmp = document.createElement('textarea');
+            tmp.value = target;
+            document.body.appendChild(tmp);
+            tmp.select();
+            try {
+              document.execCommand('copy');
+              showToast('Link copied!');
+            } catch (err) {
+              showToast(target);
+            }
+            document.body.removeChild(tmp);
+          } else if (action === 'clear-search') {
+            state.searchQuery = '';
+            const sInput = document.querySelector('[data-input="search-menu"]');
+            if (sInput) {
+              sInput.value = '';
+              sInput.focus();
+            }
+            updateMenuCardsOnly();
           } else if (action === 'open-admin') {
             if (!state.adminAllowed) return;
             state.adminOpen = true;
@@ -1830,23 +1707,21 @@
       if (searchEl) {
         searchEl.addEventListener('input', (e) => {
           state.searchQuery = e.target.value;
+          updateMenuCardsOnly();
+        });
+      }
+
+      const qrUrlEl = document.querySelector('[data-input="qr-url"]');
+      if (qrUrlEl) {
+        qrUrlEl.addEventListener('input', (e) => {
+          state.qrUrlInput = e.target.value;
+        });
+        qrUrlEl.addEventListener('change', () => {
           render();
         });
       }
 
-      const tempPriceEl = document.querySelector('[data-input="temp-price"]');
-      if (tempPriceEl) {
-        tempPriceEl.addEventListener('input', (e) => {
-          state.tempPriceValue = e.target.value;
-        });
-      }
-
-      const pinEl = document.querySelector('[data-input="pin"]');
-      if (pinEl) {
-        pinEl.addEventListener('input', (e) => {
-          state.pinInput = e.target.value;
-        });
-      }
+      bindMenuCardActions();
 
       document.querySelectorAll('[data-setting]').forEach((el) => {
         const key = el.getAttribute('data-setting');
@@ -2082,6 +1957,214 @@
     });
 
     // Initial render & automatic Supabase pull if URL is set
+    function renderAdminModal() {
+      const s = state.settings;
+      if (!state.adminUnlocked) {
+        return `<div class="fixed inset-0 z-[75] bg-forest-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <form data-form="unlock-admin" class="max-w-sm w-full rounded-3xl bg-forest-900 text-cream-50 border border-gold-500/45 p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between">
+              <h2 class="font-serif text-2xl font-semibold text-gold-300">Owner Studio</h2>
+              <button type="button" data-action="close-admin" class="w-9 h-9 rounded-full border border-gold-500/30 text-cream-100">✕</button>
+            </div>
+            <p class="text-xs text-cream-100/80">Enter your Owner PIN to edit Today's Specials, Menu, Delivery Details, Gallery &amp; Supabase Cloud.</p>
+            <input
+              type="password"
+              inputmode="numeric"
+              value="${esc(state.pinInput)}"
+              oninput="state.pinInput = this.value"
+              placeholder="PIN (Default: 1234)"
+              class="w-full px-4 py-3 rounded-xl bg-forest-950 border border-gold-500/40 text-center text-lg tracking-widest text-cream-50"
+            />
+            ${state.pinError ? `<p class="text-xs text-red-300">${esc(state.pinError)}</p>` : ''}
+            <button type="submit" class="w-full py-3 rounded-full gold-btn text-xs font-bold uppercase tracking-wider">Unlock Studio</button>
+          </form>
+        </div>`;
+      }
+
+      const tabs = [
+        { id: 'specials', label: "Today's Specials" },
+        { id: 'menu', label: 'Menu & Prices' },
+        { id: 'details', label: 'Location & Delivery' },
+        { id: 'gallery', label: 'Gallery' },
+        { id: 'cloud', label: 'Supabase Cloud' },
+      ];
+
+      return `<div class="fixed inset-0 z-[75] bg-forest-950/85 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+        <div class="max-w-4xl w-full max-h-[92dvh] flex flex-col rounded-3xl bg-forest-900 text-cream-50 border border-gold-500/45 shadow-2xl overflow-hidden">
+          <div class="px-5 py-4 bg-forest-950 border-b border-gold-500/30 flex items-center justify-between">
+            <div>
+              <h2 class="font-serif text-2xl font-semibold text-gold-300">Owner Admin Studio</h2>
+              <p class="text-[11px] text-cream-100/70">Changes auto-save locally &amp; sync to Supabase when configured</p>
+            </div>
+            <button data-action="close-admin" class="w-9 h-9 rounded-full border border-gold-500/35 text-cream-100">✕</button>
+          </div>
+
+          <div class="px-4 py-2.5 bg-forest-950/70 border-b border-gold-500/20 flex gap-2 overflow-x-auto no-scrollbar">
+            ${tabs
+              .map(
+                (t) => `<button data-action="set-admin-tab" data-tab="${t.id}" class="shrink-0 px-3.5 py-2 rounded-full text-xs font-semibold uppercase tracking-wider ${
+                  state.adminTab === t.id ? 'bg-gold-500 text-forest-900' : 'bg-forest-900 text-cream-100 border border-gold-500/25'
+                }">${esc(t.label)}</button>`
+              )
+              .join('')}
+          </div>
+
+          <div class="p-5 overflow-y-auto space-y-5 flex-1 text-xs sm:text-sm">
+            ${
+              state.adminTab === 'specials'
+                ? `<div class="space-y-4">
+                    <div>
+                      <label class="block text-xs text-gold-300 mb-1">Today's Specials Banner Note</label>
+                      <input type="text" data-setting="todaysSpecialNote" value="${esc(s.todaysSpecialNote)}" class="w-full px-3.5 py-2.5 rounded-xl bg-forest-950 border border-gold-500/30 text-cream-50" />
+                    </div>
+                    <div class="space-y-2.5">
+                      ${state.menuItems
+                        .map(
+                          (item) => `<div class="p-3.5 rounded-2xl bg-forest-950/80 border border-gold-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <p class="font-semibold text-cream-50">${esc(item.name)} <span class="text-gold-300">(${esc(item.price)})</span></p>
+                              <input type="text" data-special-badge="${esc(item.id)}" value="${esc(item.specialBadge || "Today's Special")}" placeholder="Badge text" class="mt-1.5 px-2.5 py-1 rounded-lg bg-forest-900 border border-gold-500/25 text-xs text-cream-100" />
+                            </div>
+                            <button data-action="toggle-special" data-id="${esc(item.id)}" class="px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider ${
+                              item.isTodaysSpecial ? 'bg-gold-500 text-forest-900' : 'bg-forest-800 text-cream-100 border border-gold-500/30'
+                            }">
+                              ${item.isTodaysSpecial ? '★ Featured Today' : '+ Feature Today'}
+                            </button>
+                          </div>`
+                        )
+                        .join('')}
+                    </div>
+                  </div>`
+                : ''
+            }
+
+            ${
+              state.adminTab === 'menu'
+                ? `<div class="space-y-5">
+                    <form data-form="add-dish" class="p-4 rounded-2xl bg-forest-950 border border-gold-500/30 space-y-3">
+                      <p class="font-serif text-xl text-gold-300">Add New Dish</p>
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <input type="text" required data-newdish="name" value="${esc(state.newDish.name)}" placeholder="Dish Name *" class="px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
+                        <input type="text" data-newdish="malayalamName" value="${esc(state.newDish.malayalamName)}" placeholder="Malayalam Name (optional)" class="px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
+                        <select data-newdish="category" class="px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30">
+                          ${CATEGORIES.filter((c) => c !== 'All')
+                            .map((c) => `<option ${state.newDish.category === c ? 'selected' : ''}>${esc(c)}</option>`)
+                            .join('')}
+                        </select>
+                        <div class="flex gap-2">
+                          <input type="text" data-newdish="price" value="${esc(state.newDish.price)}" placeholder="Price (e.g., ₹ 240)" class="flex-1 px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
+                          <select data-newdish="dietary" class="px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30">
+                            <option ${state.newDish.dietary === 'Non-Veg' ? 'selected' : ''}>Non-Veg</option>
+                            <option ${state.newDish.dietary === 'Veg' ? 'selected' : ''}>Veg</option>
+                            <option ${state.newDish.dietary === 'Seafood' ? 'selected' : ''}>Seafood</option>
+                          </select>
+                        </div>
+                      </div>
+                      <input type="text" data-newdish="description" value="${esc(state.newDish.description)}" placeholder="Short description of ingredients & style..." class="w-full px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
+                      <button type="submit" class="px-5 py-2.5 rounded-full gold-btn text-xs font-bold uppercase tracking-wider">+ Add Dish to Menu</button>
+                    </form>
+
+                    <div class="space-y-2.5">
+                      ${state.menuItems
+                        .map(
+                          (item) => `<div class="p-3.5 rounded-2xl bg-forest-950/80 border border-gold-500/25 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div class="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <input type="text" data-editmenu-id="${esc(item.id)}" data-editmenu-field="name" value="${esc(item.name)}" class="px-2.5 py-1.5 rounded-lg bg-forest-900 border border-gold-500/25 text-xs" />
+                              <input type="text" data-editmenu-id="${esc(item.id)}" data-editmenu-field="price" value="${esc(item.price)}" class="px-2.5 py-1.5 rounded-lg bg-forest-900 border border-gold-500/25 text-xs text-gold-300 font-semibold" />
+                              <input type="text" data-editmenu-id="${esc(item.id)}" data-editmenu-field="description" value="${esc(item.description)}" class="px-2.5 py-1.5 rounded-lg bg-forest-900 border border-gold-500/25 text-xs" />
+                            </div>
+                            <button data-action="delete-dish" data-id="${esc(item.id)}" class="px-3 py-1.5 rounded-lg border border-red-400/40 text-red-300 text-xs">Delete</button>
+                          </div>`
+                        )
+                        .join('')}
+                    </div>
+                  </div>`
+                : ''
+            }
+
+            ${
+              state.adminTab === 'details'
+                ? `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div><label class="block text-xs text-gold-300 mb-1">Restaurant Name</label><input type="text" data-setting="name" value="${esc(s.name)}" class="w-full px-3 py-2 rounded-xl bg-forest-950 border border-gold-500/30" /></div>
+                    <div><label class="block text-xs text-gold-300 mb-1">Tagline</label><input type="text" data-setting="tagline" value="${esc(s.tagline)}" class="w-full px-3 py-2 rounded-xl bg-forest-950 border border-gold-500/30" /></div>
+                    <div class="sm:col-span-2"><label class="block text-xs text-gold-300 mb-1">Full Address (Pathanamthitta)</label><input type="text" data-setting="fullAddress" value="${esc(s.fullAddress)}" class="w-full px-3 py-2 rounded-xl bg-forest-950 border border-gold-500/30" /></div>
+                    <div><label class="block text-xs text-gold-300 mb-1">Phone Display</label><input type="text" data-setting="phoneDisplay" value="${esc(s.phoneDisplay)}" class="w-full px-3 py-2 rounded-xl bg-forest-950 border border-gold-500/30" /></div>
+                    <div><label class="block text-xs text-gold-300 mb-1">WhatsApp Number (with 91)</label><input type="text" data-setting="whatsappNumber" value="${esc(s.whatsappNumber)}" class="w-full px-3 py-2 rounded-xl bg-forest-950 border border-gold-500/30" /></div>
+                    <div class="sm:col-span-2"><label class="block text-xs text-gold-300 mb-1">Opening Hours</label><input type="text" data-setting="openingHours" value="${esc(s.openingHours)}" class="w-full px-3 py-2 rounded-xl bg-forest-950 border border-gold-500/30" /></div>
+                    <div class="sm:col-span-2"><label class="block text-xs text-gold-300 mb-1">Delivery Summary</label><input type="text" data-setting="deliverySummary" value="${esc(s.deliverySummary)}" class="w-full px-3 py-2 rounded-xl bg-forest-950 border border-gold-500/30" /></div>
+                    <div class="sm:col-span-2"><label class="block text-xs text-gold-300 mb-1">Delivery Areas / Wards</label><input type="text" data-setting="deliveryAreas" value="${esc(s.deliveryAreas)}" class="w-full px-3 py-2 rounded-xl bg-forest-950 border border-gold-500/30" /></div>
+                    <div class="sm:col-span-2"><label class="block text-xs text-gold-300 mb-1">Minimum Order &amp; Packaging Note</label><input type="text" data-setting="deliveryMinOrderNote" value="${esc(s.deliveryMinOrderNote)}" class="w-full px-3 py-2 rounded-xl bg-forest-950 border border-gold-500/30" /></div>
+                    <div><label class="block text-xs text-gold-300 mb-1">Owner Studio PIN</label><input type="text" data-setting="adminPin" value="${esc(s.adminPin)}" class="w-full px-3 py-2 rounded-xl bg-forest-950 border border-gold-500/30" /></div>
+                  </div>`
+                : ''
+            }
+
+            ${
+              state.adminTab === 'gallery'
+                ? `<div class="space-y-4">
+                    <form data-form="add-photo" class="p-4 rounded-2xl bg-forest-950 border border-gold-500/30 space-y-3">
+                      <p class="font-serif text-xl text-gold-300">Add Gallery Photo</p>
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <input type="url" required data-newphoto="url" value="${esc(state.newPhoto.url)}" placeholder="Image URL (https://...) *" class="px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
+                        <input type="text" required data-newphoto="title" value="${esc(state.newPhoto.title)}" placeholder="Photo Title *" class="px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
+                      </div>
+                      <input type="text" data-newphoto="caption" value="${esc(state.newPhoto.caption)}" placeholder="Caption..." class="w-full px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
+                      <button type="submit" class="px-5 py-2.5 rounded-full gold-btn text-xs font-bold uppercase tracking-wider">+ Add Photo</button>
+                    </form>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      ${state.galleryImages
+                        .map(
+                          (img) => `<div class="p-3 rounded-2xl bg-forest-950 border border-gold-500/25 flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-3 min-w-0">
+                              <img src="${esc(img.url)}" alt="${esc(img.title)}" class="w-14 h-14 rounded-xl object-cover shrink-0" />
+                              <p class="font-semibold text-xs truncate">${esc(img.title)}</p>
+                            </div>
+                            <button data-action="delete-photo" data-id="${esc(img.id)}" class="px-3 py-1.5 rounded-lg border border-red-400/40 text-red-300 text-xs shrink-0">Remove</button>
+                          </div>`
+                        )
+                        .join('')}
+                    </div>
+                  </div>`
+                : ''
+            }
+
+            ${
+              state.adminTab === 'cloud'
+                ? `<div class="space-y-4">
+                    <div class="p-4 rounded-2xl bg-forest-950 border border-gold-500/30 space-y-3">
+                      <p class="font-serif text-xl text-gold-300">Supabase Long-Term Cloud Sync</p>
+                      <p class="text-xs text-cream-100/80">Your publishable key is already pre-filled. Paste your Supabase Project URL below and click Push All Data to Supabase.</p>
+                      <div>
+                        <label class="block text-xs text-gold-300 mb-1">Supabase Project URL</label>
+                        <input type="url" data-setting="supabaseUrl" value="${esc(s.supabaseUrl)}" placeholder="https://xxxxxxxxxxxx.supabase.co" class="w-full px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
+                      </div>
+                      <div>
+                        <label class="block text-xs text-gold-300 mb-1">Supabase Publishable Key</label>
+                        <input type="text" data-setting="supabaseAnonKey" value="${esc(s.supabaseAnonKey)}" class="w-full px-3 py-2 rounded-xl bg-forest-900 border border-gold-500/30" />
+                      </div>
+                      ${state.cloudError ? `<p class="text-xs text-red-300">${esc(state.cloudError)}</p>` : ''}
+                      <div class="flex flex-wrap gap-2 pt-1">
+                        <button data-action="push-supabase" class="px-4 py-2.5 rounded-full gold-btn text-xs font-bold uppercase tracking-wider">Push All Data to Supabase</button>
+                        <button data-action="pull-supabase" class="px-4 py-2.5 rounded-full border border-gold-500/40 text-gold-300 text-xs font-semibold uppercase tracking-wider">Pull from Supabase</button>
+                      </div>
+                    </div>
+
+                    <div class="p-4 rounded-2xl bg-forest-950 border border-gold-500/25 flex flex-wrap gap-2.5">
+                      <button data-action="export-json" class="px-4 py-2 rounded-full border border-gold-500/40 text-gold-300 text-xs font-semibold uppercase tracking-wider">Export JSON Backup</button>
+                      <label class="px-4 py-2 rounded-full border border-gold-500/40 text-cream-100 text-xs font-semibold uppercase tracking-wider cursor-pointer">
+                        Import JSON Backup
+                        <input type="file" accept=".json" data-input="import-json" class="hidden" />
+                      </label>
+                      <button data-action="reset-defaults" class="px-4 py-2 rounded-full border border-red-400/40 text-red-300 text-xs font-semibold uppercase tracking-wider">Reset Defaults</button>
+                    </div>
+                  </div>`
+                : ''
+            }
+          </div>
+        </div>
+      </div>`;
+    }
+
     render();
     if (hasSupabaseConfig()) {
       pullFromSupabase(false);
