@@ -47,17 +47,26 @@
       color: #0B2218;
       font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
       overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+      padding-bottom: env(safe-area-inset-bottom);
     }
+    img, iframe { max-width: 100%; }
+    button, a, input, select, textarea { touch-action: manipulation; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     .luxury-card {
       background: #FCFBF7;
       border: 1px solid rgba(198, 156, 78, 0.28);
       box-shadow: 0 12px 32px -12px rgba(11, 34, 24, 0.12);
       transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
     }
-    .luxury-card:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 18px 38px -12px rgba(11, 34, 24, 0.18);
-      border-color: rgba(198, 156, 78, 0.6);
+    @media (hover: hover) {
+      .luxury-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 18px 38px -12px rgba(11, 34, 24, 0.18);
+        border-color: rgba(198, 156, 78, 0.6);
+      }
+      .gold-btn:hover { transform: translateY(-1px); filter: brightness(1.04); }
     }
     .gold-btn {
       background: linear-gradient(135deg, #E5C37C 0%, #C69C4E 55%, #A88038 100%);
@@ -65,7 +74,6 @@
       box-shadow: 0 8px 20px -6px rgba(168, 128, 56, 0.55);
       transition: transform 0.2s ease, filter 0.2s ease;
     }
-    .gold-btn:hover { transform: translateY(-1px); filter: brightness(1.04); }
     .gold-btn:active { transform: translateY(1px); }
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(14px); }
@@ -611,13 +619,13 @@
 
         <!-- Top Navigation -->
         <header class="sticky top-0 z-40 bg-forest-900/95 backdrop-blur-md border-b border-gold-500/25 text-cream-50">
-          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-3">
-            <a href="#top" class="flex flex-col leading-tight group">
-              <span class="font-serif text-2xl sm:text-3xl font-bold tracking-wide text-cream-50 group-hover:text-gold-300 transition-colors">${esc(s.name)}</span>
-              <span class="text-[10px] uppercase tracking-[0.22em] text-gold-400">${esc(s.locationShort)}</span>
+          <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-2 sm:gap-3">
+            <a href="#top" class="flex flex-col leading-tight group min-w-0">
+              <span class="font-serif text-xl sm:text-3xl font-bold tracking-wide text-cream-50 group-hover:text-gold-300 transition-colors truncate">${esc(s.name)}</span>
+              <span class="text-[9px] sm:text-[10px] uppercase tracking-[0.2em] text-gold-400 truncate">${esc(s.locationShort)}</span>
             </a>
 
-            <nav class="hidden lg:flex items-center gap-6 text-xs uppercase tracking-[0.16em] text-cream-100/85">
+            <nav class="hidden lg:flex items-center gap-5 xl:gap-6 text-xs uppercase tracking-[0.16em] text-cream-100/85">
               <a href="#specials" class="hover:text-gold-300 transition-colors">Today's Specials</a>
               <a href="#about" class="hover:text-gold-300 transition-colors">About</a>
               <a href="#menu" class="hover:text-gold-300 transition-colors">Menu</a>
@@ -627,12 +635,12 @@
               <a href="#reserve" class="hover:text-gold-300 transition-colors">Reserve</a>
             </nav>
 
-            <div class="flex items-center gap-2 sm:gap-3">
+            <div class="flex items-center gap-2 sm:gap-3 shrink-0">
               ${
                 isAdmin
                   ? `<button
                       data-action="open-admin"
-                      class="px-3.5 py-2 rounded-full border border-gold-500/50 text-gold-300 hover:bg-gold-500 hover:text-forest-900 text-xs font-semibold uppercase tracking-wider transition-all"
+                      class="px-3.5 py-2.5 min-h-[40px] rounded-full border border-gold-500/50 text-gold-300 hover:bg-gold-500 hover:text-forest-900 text-xs font-semibold uppercase tracking-wider transition-all"
                     >
                       Edit Site
                     </button>`
@@ -640,14 +648,15 @@
               }
               <a
                 href="#reserve"
-                class="hidden sm:inline-flex items-center px-4 py-2 rounded-full gold-btn text-xs font-bold uppercase tracking-wider"
+                class="hidden sm:inline-flex items-center px-4 py-2.5 min-h-[40px] rounded-full gold-btn text-xs font-bold uppercase tracking-wider"
               >
                 Book Table
               </a>
               <button
                 data-action="toggle-mobile-nav"
                 aria-label="Toggle Menu"
-                class="lg:hidden p-2 rounded-lg border border-gold-500/30 text-cream-50 hover:bg-forest-800"
+                aria-expanded="${state.mobileMenuOpen ? 'true' : 'false'}"
+                class="lg:hidden min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl border border-gold-500/30 text-cream-50 hover:bg-forest-800 text-lg"
               >
                 ${state.mobileMenuOpen ? '✕' : '☰'}
               </button>
@@ -656,21 +665,21 @@
 
           ${
             state.mobileMenuOpen
-              ? `<div class="lg:hidden bg-forest-950 border-t border-gold-500/20 px-4 py-4 space-y-2.5 text-sm">
-                  <a data-action="close-mobile-nav" href="#specials" class="block py-1.5 text-gold-300 font-medium">Today's Specials</a>
-                  <a data-action="close-mobile-nav" href="#about" class="block py-1.5 text-cream-100">About Shanthi Kitchens</a>
-                  <a data-action="close-mobile-nav" href="#menu" class="block py-1.5 text-cream-100">Interactive Menu</a>
-                  <a data-action="close-mobile-nav" href="#signatures" class="block py-1.5 text-cream-100">Signature Dishes</a>
-                  <a data-action="close-mobile-nav" href="#gallery" class="block py-1.5 text-cream-100">Photo Gallery</a>
-                  <a data-action="close-mobile-nav" href="#delivery-contact" class="block py-1.5 text-cream-100">Delivery & Contact</a>
-                  <a data-action="close-mobile-nav" href="#reserve" class="block py-1.5 text-gold-300 font-semibold">Table Reservation</a>
+              ? `<div class="lg:hidden bg-forest-950 border-t border-gold-500/20 px-4 py-4 space-y-1 text-sm max-h-[calc(100dvh-4rem)] overflow-y-auto">
+                  <a data-action="close-mobile-nav" href="#specials" class="block py-3 px-3 rounded-xl hover:bg-forest-900 text-gold-300 font-medium">Today's Specials</a>
+                  <a data-action="close-mobile-nav" href="#about" class="block py-3 px-3 rounded-xl hover:bg-forest-900 text-cream-100">About Shanthi Kitchens</a>
+                  <a data-action="close-mobile-nav" href="#menu" class="block py-3 px-3 rounded-xl hover:bg-forest-900 text-cream-100">Interactive Menu</a>
+                  <a data-action="close-mobile-nav" href="#signatures" class="block py-3 px-3 rounded-xl hover:bg-forest-900 text-cream-100">Signature Dishes</a>
+                  <a data-action="close-mobile-nav" href="#gallery" class="block py-3 px-3 rounded-xl hover:bg-forest-900 text-cream-100">Photo Gallery</a>
+                  <a data-action="close-mobile-nav" href="#delivery-contact" class="block py-3 px-3 rounded-xl hover:bg-forest-900 text-cream-100">Delivery & Contact</a>
+                  <a data-action="close-mobile-nav" href="#reserve" class="block py-3 px-3 rounded-xl bg-gold-500/15 text-gold-300 font-semibold">Table Reservation</a>
                 </div>`
               : ''
           }
         </header>
 
         <!-- 1 & 2. Full-Screen Hero -->
-        <section id="top" class="relative min-h-[82vh] sm:min-h-[88vh] flex items-center justify-center bg-forest-950 text-cream-50 overflow-hidden">
+        <section id="top" class="relative min-h-[78dvh] sm:min-h-[86dvh] flex items-center justify-center bg-forest-950 text-cream-50 overflow-hidden">
           <img
             src="https://images.unsplash.com/photo-1585937421612-70a008356fbe?auto=format&fit=crop&w=1800&q=85"
             alt="Shanthi Kitchens culinary spread in Pathanamthitta"
@@ -678,31 +687,31 @@
           />
           <div class="absolute inset-0 bg-gradient-to-b from-forest-950/75 via-forest-900/65 to-forest-950/95"></div>
 
-          <div class="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 text-center py-16 animate-fade-up">
-            <p class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-forest-900/80 border border-gold-500/40 text-gold-300 text-xs uppercase tracking-[0.24em] mb-6">
+          <div class="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 text-center py-12 sm:py-16 animate-fade-up">
+            <p class="inline-flex items-center gap-2 px-3.5 sm:px-4 py-1.5 rounded-full bg-forest-900/80 border border-gold-500/40 text-gold-300 text-[11px] sm:text-xs uppercase tracking-[0.22em] mb-5 sm:mb-6">
               <span>✦</span>
               <span>${esc(s.locationShort)}</span>
               <span>✦</span>
             </p>
-            <p class="text-xs sm:text-sm uppercase tracking-[0.3em] text-cream-100/80 mb-3">${esc(s.name)}</p>
-            <h1 class="font-serif text-4xl sm:text-6xl lg:text-7xl font-semibold leading-[1.08] text-cream-50 mb-6">
+            <p class="text-xs sm:text-sm uppercase tracking-[0.26em] text-cream-100/80 mb-3">${esc(s.name)}</p>
+            <h1 class="font-serif text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-semibold leading-[1.1] text-cream-50 mb-5 sm:mb-6">
               ${esc(s.tagline)}
             </h1>
-            <p class="max-w-2xl mx-auto text-sm sm:text-base text-cream-100/85 leading-relaxed mb-8">
+            <p class="max-w-2xl mx-auto text-sm sm:text-base text-cream-100/85 leading-relaxed mb-7 sm:mb-8">
               An inviting culinary destination in Pathanamthitta celebrating Kerala kitchen traditions, seasonal specials, warm hospitality, and flexible dine-in, takeaway, and local delivery.
             </p>
-            <div class="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
-              <a href="#menu" class="px-6 py-3.5 rounded-full gold-btn text-xs sm:text-sm font-bold uppercase tracking-wider">
+            <div class="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-center gap-3 sm:gap-4 max-w-md sm:max-w-none mx-auto">
+              <a href="#menu" class="px-6 py-3.5 min-h-[48px] inline-flex items-center justify-center rounded-full gold-btn text-xs sm:text-sm font-bold uppercase tracking-wider">
                 Explore Menu
               </a>
-              <a href="#specials" class="px-6 py-3.5 rounded-full bg-forest-900/85 border border-gold-400/50 text-gold-300 hover:bg-forest-800 text-xs sm:text-sm font-semibold uppercase tracking-wider transition-colors">
+              <a href="#specials" class="px-6 py-3.5 min-h-[48px] inline-flex items-center justify-center rounded-full bg-forest-900/85 border border-gold-400/50 text-gold-300 hover:bg-forest-800 text-xs sm:text-sm font-semibold uppercase tracking-wider transition-colors">
                 Today's Specials (${specials.length})
               </a>
               <a
                 href="${esc(waLink(`Hello ${s.name}, I would like to enquire about dining / delivery in Pathanamthitta.`))}"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="px-6 py-3.5 rounded-full bg-cream-50/10 hover:bg-cream-50/20 border border-cream-50/30 text-cream-50 text-xs sm:text-sm font-semibold uppercase tracking-wider transition-colors"
+                class="px-6 py-3.5 min-h-[48px] inline-flex items-center justify-center rounded-full bg-cream-50/10 hover:bg-cream-50/20 border border-cream-50/30 text-cream-50 text-xs sm:text-sm font-semibold uppercase tracking-wider transition-colors"
               >
                 WhatsApp Enquiry
               </a>
@@ -883,13 +892,13 @@
             </div>
 
             <!-- Category Tabs -->
-            <div class="flex gap-2 overflow-x-auto pb-3 mb-8">
+            <div class="flex gap-2 overflow-x-auto no-scrollbar pb-3 mb-8 -mx-4 px-4 sm:mx-0 sm:px-0">
               ${CATEGORIES.map(
                 (cat) => `
                 <button
                   data-action="set-category"
                   data-category="${esc(cat)}"
-                  class="shrink-0 px-4 py-2 rounded-full text-xs font-semibold uppercase tracking-wider transition-colors ${
+                  class="shrink-0 px-4 py-2.5 min-h-[40px] rounded-full text-xs font-semibold uppercase tracking-wider transition-colors ${
                     state.activeCategory === cat
                       ? 'bg-gold-500 text-forest-900'
                       : 'bg-cream-100 text-forest-900 border border-gold-500/25 hover:border-gold-500'
@@ -1173,7 +1182,7 @@
                 </div>
               </div>
 
-              <div class="rounded-2xl overflow-hidden border border-gold-500/35 shadow-md h-64 bg-forest-900">
+              <div class="rounded-2xl overflow-hidden border border-gold-500/35 shadow-md h-56 sm:h-72 lg:h-80 bg-forest-900">
                 <iframe
                   title="Shanthi Kitchens Pathanamthitta Map"
                   src="${esc(s.mapEmbedUrl)}"
@@ -1329,24 +1338,45 @@
           state.lightboxIndex !== null && state.galleryImages[state.lightboxIndex]
             ? (() => {
                 const current = state.galleryImages[state.lightboxIndex];
-                return `<div class="fixed inset-0 z-[70] bg-forest-950/92 backdrop-blur-sm flex items-center justify-center p-4">
-                  <div class="max-w-4xl w-full bg-forest-900 border border-gold-500/40 rounded-3xl overflow-hidden shadow-2xl">
-                    <div class="relative bg-forest-950 flex items-center justify-center max-h-[68vh]">
-                      <img src="${esc(current.url)}" alt="${esc(current.title)}" class="max-h-[68vh] w-full object-contain" />
-                      <button data-action="close-lightbox" aria-label="Close Lightbox" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-forest-900/90 text-cream-50 border border-gold-500/40 font-bold">✕</button>
-                      <button data-action="prev-lightbox" aria-label="Previous Photo" class="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-forest-900/90 text-gold-300 border border-gold-500/40 font-bold">‹</button>
-                      <button data-action="next-lightbox" aria-label="Next Photo" class="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-forest-900/90 text-gold-300 border border-gold-500/40 font-bold">›</button>
+                return `<div data-lightbox-backdrop="true" class="fixed inset-0 z-[70] bg-forest-950/92 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+                  <div class="max-w-4xl w-full bg-forest-900 border border-gold-500/40 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl">
+                    <div data-lightbox-stage="true" class="relative bg-forest-950 flex items-center justify-center max-h-[64dvh] select-none">
+                      <img src="${esc(current.url)}" alt="${esc(current.title)}" class="max-h-[64dvh] w-full object-contain pointer-events-none" />
+                      <button data-action="close-lightbox" aria-label="Close Lightbox" class="absolute top-3 right-3 w-11 h-11 rounded-full bg-forest-900/90 text-cream-50 border border-gold-500/40 font-bold">✕</button>
+                      <button data-action="prev-lightbox" aria-label="Previous Photo" class="absolute left-2.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-forest-900/90 text-gold-300 border border-gold-500/40 text-xl font-bold">‹</button>
+                      <button data-action="next-lightbox" aria-label="Next Photo" class="absolute right-2.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-forest-900/90 text-gold-300 border border-gold-500/40 text-xl font-bold">›</button>
                     </div>
-                    <div class="p-5 sm:p-6 text-cream-50">
-                      <p class="text-[11px] uppercase tracking-widest text-gold-400 font-semibold">${esc(current.category)}</p>
-                      <h3 class="font-serif text-2xl font-semibold mt-1">${esc(current.title)}</h3>
-                      <p class="text-sm text-cream-100/80 mt-1">${esc(current.caption)}</p>
+                    <div class="p-4 sm:p-6 text-cream-50 flex items-start justify-between gap-3">
+                      <div>
+                        <p class="text-[11px] uppercase tracking-widest text-gold-400 font-semibold">${esc(current.category)}</p>
+                        <h3 class="font-serif text-xl sm:text-2xl font-semibold mt-1">${esc(current.title)}</h3>
+                        <p class="text-xs sm:text-sm text-cream-100/80 mt-1">${esc(current.caption)}</p>
+                      </div>
+                      <span class="text-xs text-cream-100/60 shrink-0">${state.lightboxIndex + 1} / ${state.galleryImages.length}</span>
                     </div>
                   </div>
                 </div>`;
               })()
             : ''
         }
+
+        <!-- Floating Mobile Quick Action Bar -->
+        <div class="sm:hidden fixed bottom-0 inset-x-0 z-30 bg-forest-950/95 backdrop-blur-md border-t border-gold-500/30 px-3 py-2 flex items-center gap-2">
+          <a href="tel:${esc(s.phoneHref)}" class="flex-1 min-h-[42px] inline-flex items-center justify-center rounded-full bg-forest-800 border border-gold-500/35 text-cream-50 text-xs font-semibold uppercase tracking-wider">
+            Call
+          </a>
+          <a
+            href="${esc(waLink(`Hello ${s.name}, I would like to enquire about dining / delivery in Pathanamthitta.`))}"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex-1 min-h-[42px] inline-flex items-center justify-center rounded-full bg-emerald-800/80 border border-emerald-400/35 text-emerald-100 text-xs font-semibold uppercase tracking-wider"
+          >
+            WhatsApp
+          </a>
+          <a href="#reserve" class="flex-1 min-h-[42px] inline-flex items-center justify-center rounded-full gold-btn text-xs font-bold uppercase tracking-wider">
+            Reserve
+          </a>
+        </div>
 
         <!-- Owner Admin Studio Modal -->
         ${isAdmin && state.adminOpen ? renderAdminModal() : ''}
@@ -1992,7 +2022,64 @@
           render();
         });
       }
+
+      // Touch swipe & backdrop tap support for Gallery Lightbox
+      const lbStage = document.querySelector('[data-lightbox-stage="true"]');
+      if (lbStage) {
+        let touchStartX = 0;
+        lbStage.addEventListener(
+          'touchstart',
+          (e) => {
+            if (e.changedTouches && e.changedTouches[0]) {
+              touchStartX = e.changedTouches[0].clientX;
+            }
+          },
+          { passive: true }
+        );
+        lbStage.addEventListener(
+          'touchend',
+          (e) => {
+            if (!e.changedTouches || !e.changedTouches[0]) return;
+            const deltaX = e.changedTouches[0].clientX - touchStartX;
+            const len = state.galleryImages.length;
+            if (Math.abs(deltaX) > 40 && len > 1) {
+              state.lightboxIndex =
+                deltaX < 0
+                  ? (state.lightboxIndex + 1) % len
+                  : (state.lightboxIndex - 1 + len) % len;
+              render();
+            }
+          },
+          { passive: true }
+        );
+      }
+
+      const lbBackdrop = document.querySelector('[data-lightbox-backdrop="true"]');
+      if (lbBackdrop) {
+        lbBackdrop.addEventListener('click', (e) => {
+          if (e.target === lbBackdrop) {
+            state.lightboxIndex = null;
+            render();
+          }
+        });
+      }
     }
+
+    // Keyboard navigation for Gallery Lightbox
+    window.addEventListener('keydown', (e) => {
+      if (state.lightboxIndex === null) return;
+      const len = state.galleryImages.length;
+      if (e.key === 'Escape') {
+        state.lightboxIndex = null;
+        render();
+      } else if (e.key === 'ArrowRight' && len > 1) {
+        state.lightboxIndex = (state.lightboxIndex + 1) % len;
+        render();
+      } else if (e.key === 'ArrowLeft' && len > 1) {
+        state.lightboxIndex = (state.lightboxIndex - 1 + len) % len;
+        render();
+      }
+    });
 
     // Initial render & automatic Supabase pull if URL is set
     render();
