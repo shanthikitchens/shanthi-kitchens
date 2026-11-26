@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://shanthi-kitchens.onrender.com/sitemap.xml
